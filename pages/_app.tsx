@@ -1,11 +1,17 @@
 import "@/styles/app.css";
 import type { AppProps } from "next/app";
-import { Amplify } from "aws-amplify";
-import outputs from "@/amplify_outputs.json";
-import "@aws-amplify/ui-react/styles.css";
-
-Amplify.configure(outputs);
+import { AmplifyConfig } from "@/components/providers/amplify-config";
+import { AmplifyClientProvider } from "@/lib/amplify-client-context";
+import { AuthWrapper } from "@/components/layout/auth-wrapper";
 
 export default function App({ Component, pageProps }: AppProps) {
-  return <Component {...pageProps} />;
+  return (
+    <AmplifyConfig>
+      <AmplifyClientProvider>
+        <AuthWrapper>
+          <Component {...pageProps} />
+        </AuthWrapper>
+      </AmplifyClientProvider>
+    </AmplifyConfig>
+  );
 }

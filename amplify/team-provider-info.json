@@ -1,0 +1,15 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-tinytoast-dev-154347-authRole",
+      "UnauthRoleArn": "arn:aws:iam::054518031130:role/amplify-tinytoast-dev-154347-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::054518031130:role/amplify-tinytoast-dev-154347-authRole",
+      "Region": "us-east-1",
+      "DeploymentBucketName": "amplify-tinytoast-dev-154347-deployment",
+      "UnauthRoleName": "amplify-tinytoast-dev-154347-unauthRole",
+      "StackName": "amplify-tinytoast-dev-154347",
+      "StackId": "arn:aws:cloudformation:us-east-1:054518031130:stack/amplify-tinytoast-dev-154347/6fe8f4a0-cef6-11f0-ba4b-1202c64f88f5",
+      "AmplifyAppId": "dd8753gti6k7y"
+    }
+  }
+}

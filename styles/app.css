@@ -1,65 +1,87 @@
-body {
-  margin: 0;
-  background: linear-gradient(180deg, rgb(117, 81, 194), rgb(255, 255, 255));
-  display: flex;
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  height: 100vh;
-  width: 100vw;
-  justify-content: center;
-  align-items: center;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  /* Spiced Color Palette */
+  --color-background: #FBF8F0;
+  --color-foreground: #17222B;
+  --color-card: #ffffff;
+  --color-card-foreground: #17222B;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #17222B;
+  --color-primary: #86373E;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #F1BD78;
+  --color-secondary-foreground: #17222B;
+  --color-muted: #EFD9C7;
+  --color-muted-foreground: #44332D;
+  --color-accent: #F1BD78;
+  --color-accent-foreground: #17222B;
+  --color-destructive: #86373E;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #EFD9C7;
+  --color-input: #EFD9C7;
+  --color-ring: #86373E;
+  --radius-lg: 0.75rem;
+  --radius-md: calc(0.75rem - 2px);
+  --radius-sm: calc(0.75rem - 4px);
 }
 
-main {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+@layer base {
+  .dark {
+    --color-background: #17222B;
+    --color-foreground: #FBF8F0;
+    --color-card: #44332D;
+    --color-card-foreground: #FBF8F0;
+    --color-popover: #44332D;
+    --color-popover-foreground: #FBF8F0;
+    --color-primary: #F1BD78;
+    --color-primary-foreground: #17222B;
+    --color-secondary: #EFD9C7;
+    --color-secondary-foreground: #17222B;
+    --color-muted: #44332D;
+    --color-muted-foreground: #EFD9C7;
+    --color-accent: #86373E;
+    --color-accent-foreground: #FBF8F0;
+    --color-destructive: #86373E;
+    --color-destructive-foreground: #FBF8F0;
+    --color-border: #44332D;
+    --color-input: #44332D;
+    --color-ring: #F1BD78;
+  }
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-  color: white;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  }
+  button,
+  a {
+    cursor: pointer;
+  }
 
-ul {
-  padding-inline-start: 0;
-  margin-block-start: 0;
-  margin-block-end: 0;
-  list-style-type: none;
-  display: flex;
-  flex-direction: column;
-  margin: 8px 0;
-  border: 1px solid black;
-  gap: 1px;
-  background-color: black;
-  border-radius: 8px;
-  overflow: auto;
-}
-
-li {
-  background-color: white;
-  padding: 8px;
-}
-
-li:hover {
-  background: #dadbf9;
-}
-
-a {
-  font-weight: 800;
-  text-decoration: none;
+  /* Override Tailwind Typography prose colors to use theme colors */
+  .prose {
+    --tw-prose-body: #17222B;
+    --tw-prose-headings: #17222B;
+    --tw-prose-lead: #17222B;
+    --tw-prose-links: #86373E;
+    --tw-prose-bold: #17222B;
+    --tw-prose-counters: #17222B;
+    --tw-prose-bullets: #17222B;
+    --tw-prose-hr: #EFD9C7;
+    --tw-prose-quotes: #17222B;
+    --tw-prose-quote-borders: #EFD9C7;
+    --tw-prose-captions: #44332D;
+    --tw-prose-code: #17222B;
+    --tw-prose-pre-code: #17222B;
+    --tw-prose-pre-bg: #EFD9C7;
+    --tw-prose-th-borders: #EFD9C7;
+    --tw-prose-td-borders: #EFD9C7;
+  }
 }
