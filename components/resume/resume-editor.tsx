@@ -576,7 +576,7 @@ Start writing your resume in markdown...
                       onClick={handleGenerateUpdate}
                       disabled={isGenerating || (selectedFeedback.size === 0 && !aiInstructions.trim())}
                       size="sm"
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      className="bg-primary hover:bg-primary/90 disabled:opacity-100"
                     >
                       {isGenerating ? (
                         <>
