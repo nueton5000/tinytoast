@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { getCurrentUser } from "aws-amplify/auth";
 import { useAmplifyClient } from "@/lib/amplify-client-context";
 import type { Schema } from "@/amplify/data/resource";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Trash2, CheckCircle2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function ReceivedFeedbackPage() {
   const client = useAmplifyClient();
@@ -14,6 +15,9 @@ export default function ReceivedFeedbackPage() {
   const [resumes, setResumes] = useState<Array<Schema["Resume"]["type"]>>([]);
   const [resumeFeedbacks, setResumeFeedbacks] = useState<Array<Schema["ResumeFeedback"]["type"]>>([]);
   const [loading, setLoading] = useState(true);
+  const [discarding, setDiscarding] = useState<string | null>(null);
+  const [applying, setApplying] = useState<string | null>(null);
+  const [feedbackProfiles, setFeedbackProfiles] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     getCurrentUser().then(currentUser => setUser(currentUser)).catch(() => {});
@@ -26,15 +30,38 @@ export default function ReceivedFeedbackPage() {
       try {
         setLoading(true);
         const profileRes = await client.models.Profile.get({ id: user.userId });
+        console.log("Profile:", profileRes.data);
         if (profileRes.data) {
           setProfile(profileRes.data);
-          const [feedbackRes, resumesRes, resumeFeedbacksRes] = await Promise.all([
-            profileRes.data.receivedFeedback(),
-            profileRes.data.resumes(),
-            client.models.ResumeFeedback.list()
-          ]);
+          const feedbackRes = await profileRes.data.receivedFeedback();
+          console.log("Received feedback response:", feedbackRes);
+          console.log("Received feedback data:", feedbackRes.data);
+          console.log("Feedback count:", feedbackRes.data.length);
+
           setReceivedFeedback(feedbackRes.data);
-          setResumes(resumesRes.data);
+
+          // Load profiles for feedback providers
+          const profileMap = new Map<string, string>();
+          for (const feedback of feedbackRes.data) {
+            if (feedback.fromProfileId) {
+              try {
+                const profileRes = await client.models.Profile.get({ id: feedback.fromProfileId });
+                if (profileRes.data?.nickname) {
+                  profileMap.set(feedback.fromProfileId, profileRes.data.nickname);
+                }
+              } catch (err) {
+                console.error("Error loading profile for feedback:", err);
+              }
+            }
+          }
+          setFeedbackProfiles(profileMap);
+
+          // Get the single resume (not resumes - Profile has hasOne relationship)
+          const resumeRes = await profileRes.data.resume();
+          console.log("Resume:", resumeRes.data);
+          setResumes(resumeRes.data ? [resumeRes.data] : []);
+
+          const resumeFeedbacksRes = await client.models.ResumeFeedback.list();
           setResumeFeedbacks(resumeFeedbacksRes.data);
         }
       } catch (error) {
@@ -49,11 +76,14 @@ export default function ReceivedFeedbackPage() {
 
   const applyFeedbackToResume = async (feedbackId: string, resumeId: string) => {
     try {
+      setApplying(feedbackId);
       await client.models.ResumeFeedback.create({ feedbackId, resumeId });
       const response = await client.models.ResumeFeedback.list();
       setResumeFeedbacks(response.data);
     } catch (error) {
       console.error("Error applying feedback:", error);
+    } finally {
+      setApplying(null);
     }
   };
 
@@ -61,6 +91,18 @@ export default function ReceivedFeedbackPage() {
     return resumeFeedbacks.some(
       rf => rf.feedbackId === feedbackId && rf.resumeId === resumeId
     );
+  };
+
+  const discardFeedback = async (feedbackId: string) => {
+    try {
+      setDiscarding(feedbackId);
+      await client.models.Feedback.delete({ id: feedbackId });
+      setReceivedFeedback(prev => prev.filter(f => f.id !== feedbackId));
+    } catch (error) {
+      console.error("Error discarding feedback:", error);
+    } finally {
+      setDiscarding(null);
+    }
   };
 
   if (loading) {
@@ -92,47 +134,73 @@ export default function ReceivedFeedbackPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
-          {receivedFeedback.map((feedback) => (
-            <Card key={feedback.id}>
-              <CardHeader>
-                <CardTitle>Feedback</CardTitle>
-                <CardDescription>
-                  {new Date(feedback.createdAt || "").toLocaleDateString()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="whitespace-pre-wrap">{feedback.content}</div>
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>Question</TableHead>
+                  <TableHead>Response</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {receivedFeedback.map((feedback) => {
+                  const resume = resumes[0];
+                  const isApplied = feedback.id && resume?.id ? isFeedbackAppliedToResume(feedback.id, resume.id) : false;
 
-                {resumes.length > 0 && (
-                  <>
-                    <div className="border-t pt-4">
-                      <h3 className="font-semibold mb-2">Apply to Resume</h3>
-                      <div className="flex gap-2 flex-wrap">
-                        {resumes.map((resume) => {
-                          if (!feedback.id || !resume.id) return null;
-                          const isApplied = isFeedbackAppliedToResume(feedback.id, resume.id);
-                          return (
+                  return (
+                    <TableRow key={feedback.id}>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {new Date(feedback.createdAt || "").toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {feedback.fromProfileId ? feedbackProfiles.get(feedback.fromProfileId) || "Anonymous" : "Anonymous"}
+                      </TableCell>
+                      <TableCell className="font-medium max-w-xs">
+                        {feedback.questionText}
+                      </TableCell>
+                      <TableCell className="max-w-md">
+                        <div className="line-clamp-3">{feedback.content}</div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {resume && (
                             <Button
-                              key={resume.id}
                               variant={isApplied ? "secondary" : "outline"}
-                              onClick={() =>
-                                !isApplied && applyFeedbackToResume(feedback.id!, resume.id!)
-                              }
-                              disabled={isApplied}
+                              size="sm"
+                              onClick={() => !isApplied && feedback.id && resume.id && applyFeedbackToResume(feedback.id, resume.id)}
+                              disabled={isApplied || applying === feedback.id}
                             >
-                              {isApplied ? "✓ " : ""}Apply to {resume.name}
+                              {isApplied ? (
+                                <>
+                                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                                  Applied
+                                </>
+                              ) : (
+                                "Apply to Resume"
+                              )}
                             </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => feedback.id && discardFeedback(feedback.id)}
+                            disabled={discarding === feedback.id}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

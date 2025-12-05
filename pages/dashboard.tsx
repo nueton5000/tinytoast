@@ -4,10 +4,11 @@ import { getCurrentUser } from "aws-amplify/auth";
 import { useAmplifyClient } from "@/lib/amplify-client-context";
 import type { Schema } from "@/amplify/data/resource";
 import { ProfileSetup } from "@/components/profile/profile-setup";
-import { ShareProfileLink } from "@/components/profile/share-profile-link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, MessageSquare, Send, Edit, Loader2 } from "lucide-react";
+import { FileText, Edit, Loader2, Copy, Check } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 
 export default function DashboardPage() {
   const client = useAmplifyClient();
@@ -17,9 +18,9 @@ export default function DashboardPage() {
   const [versions, setVersions] = useState<Array<Schema["ResumeVersion"]["type"]>>([]);
   const [publishedVersion, setPublishedVersion] = useState<Schema["ResumeVersion"]["type"] | null>(null);
   const [receivedFeedback, setReceivedFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
-  const [givenFeedback, setGivenFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
   const [profileLoading, setProfileLoading] = useState(true);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     getCurrentUser().then(currentUser => setUser(currentUser)).catch(() => {});
@@ -54,10 +55,9 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       try {
-        const [resumeRes, receivedRes, providedRes] = await Promise.all([
+        const [resumeRes, receivedRes] = await Promise.all([
           profile.resume(),
           profile.receivedFeedback(),
-          profile.providedFeedback(),
         ]);
 
         const resumeData = resumeRes.data;
@@ -74,8 +74,10 @@ export default function DashboardPage() {
           setPublishedVersion(published || null);
         }
 
+        console.log("Received feedback response:", receivedRes);
+        console.log("Received feedback data:", receivedRes.data);
+        console.log("Profile ID:", profile.id);
         setReceivedFeedback(receivedRes.data);
-        setGivenFeedback(providedRes.data);
       } catch (error) {
         console.error("Error fetching profile data:", error);
       }
@@ -96,6 +98,18 @@ export default function DashboardPage() {
     }
   };
 
+  const copyFeedbackLink = async () => {
+    if (!profile?.nickname) return;
+    const profileUrl = `${window.location.origin}/p/${profile.nickname}/feedback`;
+    try {
+      await navigator.clipboard.writeText(profileUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
   if (user && showProfileSetup && !profileLoading) {
     return <ProfileSetup userId={user.userId} onComplete={handleProfileSetupComplete} />;
   }
@@ -113,129 +127,175 @@ export default function DashboardPage() {
 
   if (!profile) return null;
 
+  // Chart configurations
+  const viewsChartConfig = {
+    views: {
+      label: "Views",
+      color: "hsl(var(--chart-1))",
+    },
+  } satisfies ChartConfig;
+
+  const clicksChartConfig = {
+    clicks: {
+      label: "Clicks",
+      color: "hsl(var(--chart-2))",
+    },
+  } satisfies ChartConfig;
+
+  // Mock data for resume views - replace with actual data from analytics
+  const resumeViewsData = [
+    { date: "Mon", views: 12 },
+    { date: "Tue", views: 19 },
+    { date: "Wed", views: 15 },
+    { date: "Thu", views: 25 },
+    { date: "Fri", views: 22 },
+    { date: "Sat", views: 18 },
+    { date: "Sun", views: 14 },
+  ];
+
+  // Process feedback data to show clicks by profile
+  const feedbackClicksData = receivedFeedback.reduce((acc: any[], feedback) => {
+    const existingProfile = acc.find(item => item.profile === feedback.fromProfileId);
+    if (existingProfile) {
+      existingProfile.clicks += 1;
+    } else {
+      acc.push({ profile: feedback.fromProfileId?.substring(0, 8) || "Unknown", clicks: 1 });
+    }
+    return acc;
+  }, []);
+
   return (
     <div className="container mx-auto p-8">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight">
-          Welcome back, {profile.nickname}!
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Dashboard
         </h1>
-        <p className="text-muted-foreground mt-2">
-          Here's an overview of your resumes and feedback.
-        </p>
+        {profile?.nickname && (
+          <div className="flex items-center gap-2">
+            <code className="text-sm text-muted-foreground px-3 py-1.5 bg-muted rounded-md">
+              {window.location.origin}/p/{profile.nickname}/feedback
+            </code>
+            <Button
+              onClick={copyFeedbackLink}
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-4 w-4 mr-2 text-green-600" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Link
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Share Profile Link */}
-      <div className="mb-8">
-        <ShareProfileLink nickname={profile.nickname} />
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-6 md:grid-cols-3 mb-8">
+      {/* Metrics */}
+      <div className="grid gap-4 md:grid-cols-2 mb-8">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader>
             <CardTitle className="text-sm font-medium">
-              Resume Versions
+              Resume Views
             </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{versions.length}</div>
-            {publishedVersion && (
-              <p className="text-xs text-muted-foreground mt-1">
-                v{publishedVersion.version} published
-              </p>
+          <CardContent className="pb-4">
+            <ChartContainer config={viewsChartConfig} className="h-[200px] w-full">
+              <LineChart data={resumeViewsData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line
+                  dataKey="views"
+                  type="monotone"
+                  stroke="var(--color-views)"
+                  strokeWidth={2}
+                  dot={{ fill: "var(--color-views)", r: 4 }}
+                />
+              </LineChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">
+              Feedback Clicks
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            {feedbackClicksData.length > 0 ? (
+              <ChartContainer config={clicksChartConfig} className="h-[200px] w-full">
+                <BarChart data={feedbackClicksData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="profile"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={10}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="clicks" fill="var(--color-clicks)" radius={4} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
+                No feedback clicks yet
+              </div>
             )}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Feedback Received
-            </CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{receivedFeedback.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Feedback Given
-            </CardTitle>
-            <Send className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{givenFeedback.length}</div>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Resume Status */}
+      {/* Resume */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Your Resume</CardTitle>
-          <CardDescription>
-            {resume ? `${resume.name} - ${versions.length} version${versions.length !== 1 ? 's' : ''}` : 'No resume yet'}
-          </CardDescription>
+          <CardTitle>Resume</CardTitle>
         </CardHeader>
         <CardContent>
-          {resume ? (
-            <div className="space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold">{resume.name}</h3>
-                    {publishedVersion && (
-                      <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
-                        v{publishedVersion.version} Published
-                      </span>
-                    )}
-                  </div>
-                  {publishedVersion?.content && (
-                    <p className="text-sm text-muted-foreground">
-                      {publishedVersion.content.substring(0, 150)}...
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Link href="/resumes/edit">
-                    <Button variant="default" size="sm">
-                      <Edit className="mr-2 h-4 w-4" />
-                      Edit Resume
-                    </Button>
-                  </Link>
-                </div>
+          {resume && publishedVersion ? (
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="font-medium mb-1">{resume.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  Version {publishedVersion.version}
+                </p>
               </div>
-
-              {versions.length > 1 && (
-                <div className="pt-4 border-t">
-                  <h4 className="text-sm font-medium mb-2">Recent Versions</h4>
-                  <div className="space-y-2">
-                    {versions.slice(0, 3).map(version => (
-                      <div key={version.id} className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          Version {version.version}
-                          {version.isPublished && ' (Published)'}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {version.updatedAt && new Date(version.updatedAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <Link href="/resumes/edit">
+                <Button variant="outline" size="sm">
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+              </Link>
             </div>
           ) : (
-            <div className="text-center py-6">
+            <div className="text-center py-4">
               <p className="text-muted-foreground text-sm mb-4">
-                No resume yet. Create your first resume to get started!
+                No resume published yet
               </p>
               <Link href="/resumes/edit">
-                <Button>
+                <Button size="sm">
                   <FileText className="mr-2 h-4 w-4" />
                   Create Resume
                 </Button>
@@ -249,23 +309,25 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Feedback</CardTitle>
-          <CardDescription>Latest feedback you've received</CardDescription>
         </CardHeader>
         <CardContent>
           {receivedFeedback.length > 0 ? (
-            <div className="space-y-4">
-              {receivedFeedback.slice(0, 3).map(feedback => (
+            <div className="space-y-3">
+              {receivedFeedback.slice(0, 5).map(feedback => (
                 <div
                   key={feedback.id}
-                  className="border-b pb-4 last:border-0 last:pb-0"
+                  className="border-b pb-3 last:border-0 last:pb-0"
                 >
-                  <p className="text-sm">{feedback.content?.substring(0, 200)}...</p>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">
+                    {feedback.questionText}
+                  </p>
+                  <p className="text-sm">{feedback.content}</p>
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">
-              No feedback received yet. Share your profile link to collect feedback!
+              No feedback received yet. Share your profile link to start collecting feedback!
             </p>
           )}
         </CardContent>

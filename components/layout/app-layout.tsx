@@ -34,7 +34,6 @@ import {
   Send,
   Menu,
   X,
-  Plus,
   Home
 } from "lucide-react";
 
@@ -49,11 +48,12 @@ function AppLayoutInner({ children, user, onSignOut }: AppLayoutProps) {
   const pathname = usePathname();
 
   const [profile, setProfile] = useState<Schema["Profile"]["type"]>();
-  const [resume, setResume] = useState<Schema["Resume"]["type"]>();
-  const [versions, setVersions] = useState<Array<Schema["ResumeVersion"]["type"]>>([]);
   const [receivedFeedback, setReceivedFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
   const [givenFeedback, setGivenFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Collapse sidebar by default on view resume page
+  const isViewResumePage = pathname?.startsWith('/p/');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isViewResumePage);
 
   const userEmail = user?.signInDetails?.loginId || user?.username || "User";
   const userInitial = userEmail.charAt(0).toUpperCase();
@@ -80,20 +80,12 @@ function AppLayoutInner({ children, user, onSignOut }: AppLayoutProps) {
 
     const fetchData = async () => {
       try {
-        const [resumeRes, receivedRes, providedRes] = await Promise.all([
-          profile.resume(),
+        const [receivedRes, providedRes] = await Promise.all([
           profile.receivedFeedback(),
           profile.providedFeedback(),
         ]);
-        setResume(resumeRes.data ?? undefined);
         setReceivedFeedback(receivedRes.data);
         setGivenFeedback(providedRes.data);
-
-        // Fetch versions if resume exists
-        if (resumeRes.data) {
-          const versionsRes = await resumeRes.data.versions();
-          setVersions(versionsRes.data);
-        }
       } catch (error) {
         console.error("Error fetching profile data:", error);
       }
@@ -174,40 +166,23 @@ function AppLayoutInner({ children, user, onSignOut }: AppLayoutProps) {
 
               <Separator className="my-2" />
 
-              {/* Resume */}
+              {/* Resume Links */}
               <SidebarSection>
-                <SidebarSectionTitle>
-                  <div className="flex items-center justify-between">
-                    <span>My Resume</span>
-                    {resume && <Badge variant="secondary">{versions.length}</Badge>}
-                  </div>
-                </SidebarSectionTitle>
-                {resume ? (
-                  <>
-                    <Link href={`/resumes/${resume.id}`}>
-                      <SidebarItem active={pathname === `/resumes/${resume.id}`}>
-                        <FileText className="h-4 w-4" />
-                        <span className="truncate">{resume.name || 'My Resume'}</span>
-                      </SidebarItem>
-                    </Link>
-                  </>
-                ) : (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    No resume yet
-                  </div>
-                )}
-                {!resume && (
-                  <Link href="/resumes/edit">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1 w-full justify-start gap-2 px-3"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Create Resume</span>
-                    </Button>
+                <SidebarSectionTitle>Resume</SidebarSectionTitle>
+                {profile?.nickname && (
+                  <Link href={`/p/${profile.nickname}`}>
+                    <SidebarItem active={pathname === `/p/${profile.nickname}`}>
+                      <FileText className="h-4 w-4" />
+                      <span>View Resume</span>
+                    </SidebarItem>
                   </Link>
                 )}
+                <Link href="/resumes/edit">
+                  <SidebarItem active={pathname === "/resumes/edit"}>
+                    <FileText className="h-4 w-4" />
+                    <span>Edit Resume</span>
+                  </SidebarItem>
+                </Link>
               </SidebarSection>
 
               <Separator className="my-2" />
