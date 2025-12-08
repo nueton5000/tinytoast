@@ -19,6 +19,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Loader2,
   Check,
   Sparkles,
@@ -57,7 +64,8 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
   // Feedback state
   const [incorporatedFeedback, setIncorporatedFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
   const [availableFeedback, setAvailableFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
-  const [selectedFeedback, setSelectedFeedback] = useState<Set<string>>(new Set());
+  const [allFeedback, setAllFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
+  const [togglingFeedbackId, setTogglingFeedbackId] = useState<string | null>(null);
 
   // AI state
   const [aiInstructions, setAiInstructions] = useState("");
@@ -148,7 +156,14 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
     try {
       // Load all feedback for the user
       const allFeedbackResponse = await client.models.Feedback.list();
-      const allFeedback = allFeedbackResponse.data;
+      const feedbackList = allFeedbackResponse.data;
+
+      // Sort by creation date (newest first)
+      const sortedFeedback = [...feedbackList].sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
 
       // Load the junction table entries to see what's already incorporated
       const resumeFeedbackResponse = await client.models.ResumeFeedback.list({
@@ -159,9 +174,10 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
       );
 
       // Split feedback into incorporated and available
-      const incorporated = allFeedback.filter(f => f.id && incorporatedIds.has(f.id));
-      const available = allFeedback.filter(f => f.id && !incorporatedIds.has(f.id));
+      const incorporated = sortedFeedback.filter(f => f.id && incorporatedIds.has(f.id));
+      const available = sortedFeedback.filter(f => f.id && !incorporatedIds.has(f.id));
 
+      setAllFeedback(sortedFeedback);
       setIncorporatedFeedback(incorporated);
       setAvailableFeedback(available);
     } catch (err) {
@@ -251,9 +267,9 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
   };
 
   const handleGenerateUpdate = async () => {
-    // Check if user has selected feedback or provided instructions
-    if (selectedFeedback.size === 0 && !aiInstructions.trim()) {
-      setError("Please select feedback or provide instructions");
+    // Check if user has available feedback or provided instructions
+    if (availableFeedback.length === 0 && !aiInstructions.trim()) {
+      setError("Please provide instructions or collect feedback");
       return;
     }
 
@@ -266,9 +282,8 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
       const resumePart = resumeContent;
 
       let feedbackPart = "";
-      if (selectedFeedback.size > 0) {
+      if (availableFeedback.length > 0) {
         const feedbackItems = availableFeedback
-          .filter(f => f.id && selectedFeedback.has(f.id))
           .map(f => {
             if (f.questionText) {
               return `Q: ${f.questionText}\nA: ${f.content}`;
@@ -312,23 +327,24 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
 
     setResumeContent(generatedUpdate);
 
-    // Mark the selected feedback as incorporated
-    if (currentResumeId && selectedFeedback.size > 0) {
+    // Mark all available feedback as incorporated
+    if (currentResumeId && availableFeedback.length > 0) {
       try {
         await Promise.all(
-          Array.from(selectedFeedback).map(feedbackId =>
-            client.models.ResumeFeedback.create({
-              resumeId: currentResumeId,
-              feedbackId: feedbackId
-            })
-          )
+          availableFeedback
+            .filter(f => f.id)
+            .map(f =>
+              client.models.ResumeFeedback.create({
+                resumeId: currentResumeId,
+                feedbackId: f.id!
+              })
+            )
         );
 
         // Reload feedback data to update the UI
         await loadFeedbackData(currentResumeId);
 
-        // Clear selections and generated update
-        setSelectedFeedback(new Set());
+        // Clear generated update
         setGeneratedUpdate("");
         setAiInstructions("");
       } catch (err) {
@@ -344,6 +360,45 @@ export function ResumeEditor({ resumeId, onSave }: ResumeEditorProps) {
   const handleDiscardUpdate = () => {
     setGeneratedUpdate("");
     setError("");
+  };
+
+  const handleToggleFeedback = async (feedbackId: string, isIncorporated: boolean) => {
+    if (!currentResumeId) return;
+
+    setTogglingFeedbackId(feedbackId);
+
+    try {
+      if (isIncorporated) {
+        // Remove from incorporated (find and delete the junction entry)
+        const resumeFeedbackResponse = await client.models.ResumeFeedback.list({
+          filter: {
+            resumeId: { eq: currentResumeId },
+            feedbackId: { eq: feedbackId }
+          }
+        });
+
+        // Delete all matching entries
+        await Promise.all(
+          resumeFeedbackResponse.data.map(rf =>
+            client.models.ResumeFeedback.delete({ id: rf.id })
+          )
+        );
+      } else {
+        // Add to incorporated
+        await client.models.ResumeFeedback.create({
+          resumeId: currentResumeId,
+          feedbackId: feedbackId
+        });
+      }
+
+      // Reload feedback data to update the UI
+      await loadFeedbackData(currentResumeId);
+    } catch (err) {
+      console.error("Error toggling feedback:", err);
+      setError("Failed to update feedback status");
+    } finally {
+      setTogglingFeedbackId(null);
+    }
   };
 
   const handleVersionSwitch = (version: Schema["ResumeVersion"]["type"]) => {
@@ -574,7 +629,7 @@ Start writing your resume in markdown...
                   <div className="flex justify-end">
                     <Button
                       onClick={handleGenerateUpdate}
-                      disabled={isGenerating || (selectedFeedback.size === 0 && !aiInstructions.trim())}
+                      disabled={isGenerating || (availableFeedback.length === 0 && !aiInstructions.trim())}
                       size="sm"
                       className="bg-primary hover:bg-primary/90 disabled:opacity-100"
                     >
@@ -596,92 +651,60 @@ Start writing your resume in markdown...
 
               <ScrollArea className="flex-1">
                 <div className="p-6 space-y-6">
-                  {/* Incorporated Feedback */}
-                  {incorporatedFeedback.length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm font-medium">Incorporated Feedback</CardTitle>
-                          <Badge variant="secondary" className="text-xs">
-                            {incorporatedFeedback.length}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-32">
-                          <div className="space-y-2">
-                            {incorporatedFeedback.map(feedback => (
-                              <div
-                                key={feedback.id}
-                                className="flex items-start gap-2 p-2 rounded bg-muted/50"
-                              >
-                                <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                <div className="text-xs flex-1">
-                                  {feedback.questionText && (
-                                    <p className="font-medium text-muted-foreground mb-1">
-                                      Q: {feedback.questionText}
-                                    </p>
-                                  )}
-                                  <p>A: {feedback.content}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-                  )}
+                  {/* Feedback Section */}
+                  {allFeedback.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <h3 className="text-sm font-medium">Feedback</h3>
+                        <Badge variant="secondary" className="text-xs">
+                          {incorporatedFeedback.length} applied
+                        </Badge>
+                      </div>
+                      <Accordion type="multiple" className="w-full">
+                        {allFeedback.map((feedback, index) => {
+                          const isIncorporated = incorporatedFeedback.some(f => f.id === feedback.id);
+                          const isToggling = togglingFeedbackId === feedback.id;
 
-                  {/* Available Feedback */}
-                  {availableFeedback.length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm font-medium">Available Feedback</CardTitle>
-                          {selectedFeedback.size > 0 && (
-                            <Badge variant="secondary" className="text-xs">
-                              {selectedFeedback.size} selected
-                            </Badge>
-                          )}
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-40">
-                          <div className="space-y-1">
-                            {availableFeedback.map(feedback => (
-                              <div
-                                key={feedback.id}
-                                className="flex items-start gap-2 p-2 rounded hover:bg-muted cursor-pointer transition-colors"
-                                onClick={() => {
-                                  if (!feedback.id) return;
-                                  const newSelected = new Set(selectedFeedback);
-                                  if (newSelected.has(feedback.id)) {
-                                    newSelected.delete(feedback.id);
-                                  } else {
-                                    newSelected.add(feedback.id);
-                                  }
-                                  setSelectedFeedback(newSelected);
-                                }}
-                              >
-                                <div className="flex h-4 w-4 items-center justify-center rounded border mt-0.5 flex-shrink-0">
-                                  {feedback.id && selectedFeedback.has(feedback.id) && (
-                                    <Check className="h-3 w-3" />
+                          return (
+                            <AccordionItem key={feedback.id} value={feedback.id || `feedback-${index}`}>
+                              <AccordionTrigger className="hover:no-underline py-3">
+                                <div className="flex items-center gap-3 w-full pr-2">
+                                  {isToggling ? (
+                                    <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                                  ) : (
+                                    <Checkbox
+                                      checked={isIncorporated}
+                                      onCheckedChange={(checked) => {
+                                        if (feedback.id) {
+                                          handleToggleFeedback(feedback.id, isIncorporated);
+                                        }
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex-shrink-0"
+                                    />
                                   )}
+                                  <span className="text-xs text-left flex-1 line-clamp-2">
+                                    {feedback.content || "No content"}
+                                  </span>
                                 </div>
-                                <div className="text-xs flex-1">
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="pl-9 pr-2 pb-2 text-xs text-muted-foreground">
                                   {feedback.questionText && (
-                                    <p className="font-medium text-muted-foreground mb-1">
-                                      Q: {feedback.questionText}
+                                    <p className="font-medium mb-2 text-foreground">
+                                      {feedback.questionText}
                                     </p>
                                   )}
-                                  <p>A: {feedback.content}</p>
+                                  <p className="whitespace-pre-wrap">
+                                    {feedback.content}
+                                  </p>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
+                              </AccordionContent>
+                            </AccordionItem>
+                          );
+                        })}
+                      </Accordion>
+                    </div>
                   )}
 
                   {/* Generated Update */}
@@ -716,7 +739,7 @@ Start writing your resume in markdown...
                   )}
 
                   {/* Empty State */}
-                  {availableFeedback.length === 0 && incorporatedFeedback.length === 0 && (
+                  {allFeedback.length === 0 && (
                     <Card>
                       <CardContent className="pt-6 text-center text-sm text-muted-foreground">
                         <p>No feedback available yet.</p>

@@ -85,7 +85,28 @@ const schema = a.schema({
       allow.authenticated().to(['create']),
       allow.ownerDefinedIn('toProfileId')
     ]),
-
+  ProfileDailyViewMetric: a
+    .model({
+      profileId: a.id().required(),
+      date: a.date().required(),
+      viewCount: a.integer().default(0)
+    })
+    .identifier(['profileId', 'date'])
+    .authorization((allow) => [
+      allow.ownerDefinedIn('profileId').to(['get', 'list']),
+      allow.publicApiKey().to(['read'])
+    ]),
+  FeedbackTotalViewMetric: a
+    .model({
+      profileId: a.id().required(),
+      feedbackId: a.id().required(),
+      viewCount: a.integer().default(0)
+    })
+    .identifier(['profileId', 'feedbackId'])
+    .authorization((allow) => [
+      allow.ownerDefinedIn('profileId').to(['get', 'list']),
+      allow.publicApiKey().to(['read'])
+    ]),
 // AI generation route for improving resumes
   improveResume: a
     .generation({
@@ -174,6 +195,39 @@ Return your response as a JSON object with:
       isComplete: a.boolean()
     }))
     .authorization((allow) => allow.authenticated()),
+
+  // Custom mutation to increment profile daily view count
+  incrementProfileView: a
+    .mutation()
+    .arguments({
+      profileId: a.id().required()
+    })
+    .returns(a.customType({
+      success: a.boolean(),
+      viewCount: a.integer()
+    }))
+    .handler(a.handler.custom({
+      dataSource: a.ref('ProfileDailyViewMetric'),
+      entry: './resolvers/incrementProfileView.js'
+    }))
+    .authorization((allow) => allow.publicApiKey()),
+
+  // Custom mutation to increment feedback total view count
+  incrementFeedbackView: a
+    .mutation()
+    .arguments({
+      profileId: a.id().required(),
+      feedbackId: a.id().required()
+    })
+    .returns(a.customType({
+      success: a.boolean(),
+      viewCount: a.integer()
+    }))
+    .handler(a.handler.custom({
+      dataSource: a.ref('FeedbackTotalViewMetric'),
+      entry: './resolvers/incrementFeedbackView.js'
+    }))
+    .authorization((allow) => allow.publicApiKey()),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -182,5 +236,8 @@ export const data = defineData({
   schema,
   authorizationModes: {
     defaultAuthorizationMode: "userPool",
+    apiKeyAuthorizationMode: {
+      expiresInDays: 30,
+    },
   },
 });

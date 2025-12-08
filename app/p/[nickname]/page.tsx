@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { getCurrentUser } from "aws-amplify/auth";
 import { useAmplifyClient } from "@/lib/amplify-client-context";
 import type { Schema } from "@/amplify/data/resource";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,16 +14,40 @@ export default function ProfilePage() {
   const router = useRouter();
   const client = useAmplifyClient();
 
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<Schema["Profile"]["type"] | null>(null);
   const [profile, setProfile] = useState<Schema["Profile"]["type"] | null>(null);
   const [resumeContent, setResumeContent] = useState<string>("");
   const [appliedFeedback, setAppliedFeedback] = useState<Array<Schema["Feedback"]["type"]>>([]);
+  const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [currentUserLoaded, setCurrentUserLoaded] = useState(false);
+  const loggedPageViewRef = useRef(false);
 
   useEffect(() => {
-    if (params?.nickname) {
+    getCurrentUser()
+      .then(user => {
+        setCurrentUser(user);
+        if (user?.userId) {
+          return client.models.Profile.get({ id: user.userId });
+        }
+        return null;
+      })
+      .then(response => {
+        setCurrentUserProfile(response?.data || null);
+        setCurrentUserLoaded(true);
+      })
+      .catch(() => {
+        setCurrentUserProfile(null);
+        setCurrentUserLoaded(true);
+      });
+  }, [client]);
+
+  useEffect(() => {
+    if (params?.nickname && currentUserLoaded) {
       loadProfile();
     }
-  }, [params?.nickname]);
+  }, [params?.nickname, currentUserLoaded]);
 
   const loadProfile = async () => {
     if (!params?.nickname) return;
@@ -36,6 +61,19 @@ export default function ProfilePage() {
       if (response.data && response.data.length > 0) {
         const profileData = response.data[0];
         setProfile(profileData);
+
+        // Check if user is viewing their own profile
+        const isOwnProfile = currentUserProfile?.id === profileData.id;
+
+        // Log page view metric if not viewing own profile (only once)
+        if (!isOwnProfile && profileData.id && !loggedPageViewRef.current) {
+          loggedPageViewRef.current = true;
+          try {
+            await client.mutations.incrementProfileView({ profileId: profileData.id });
+          } catch (error) {
+            console.error("Error logging page view:", error);
+          }
+        }
 
         // Load the profile's resume
         const resumeResponse = await profileData.resume();
@@ -96,14 +134,55 @@ export default function ProfilePage() {
             {appliedFeedback.length > 0 && (
               <aside className="w-64 flex-shrink-0">
                 <h2 className="text-sm font-semibold mb-4">Feedback</h2>
-                <div className="space-y-3">
-                  {appliedFeedback.map((feedback) => (
-                    <div key={feedback.id} className="text-sm">
-                      <div className="font-medium mb-1">{feedback.questionText}</div>
-                      <div className="text-muted-foreground line-clamp-3">{feedback.content}</div>
-                    </div>
-                  ))}
-                </div>
+                <ul className="space-y-2">
+                  {appliedFeedback.map((feedback) => {
+                    const isExpanded = expandedFeedback.has(feedback.id);
+                    const toggleExpanded = () => {
+                      setExpandedFeedback(prev => {
+                        const next = new Set(prev);
+                        if (next.has(feedback.id)) {
+                          next.delete(feedback.id);
+                        } else {
+                          next.add(feedback.id);
+                        }
+                        return next;
+                      });
+
+                      // Log feedback view metric when clicked
+                      if (profile?.id && feedback.id && currentUserProfile?.id !== profile.id) {
+                        client.mutations.incrementFeedbackView({
+                          profileId: profile.id,
+                          feedbackId: feedback.id
+                        }).catch(error => console.error("Error logging feedback view:", error));
+                      }
+                    };
+
+                    return (
+                      <li key={feedback.id}>
+                        <button
+                          onClick={toggleExpanded}
+                          className="w-full text-left text-sm p-3 rounded-lg border hover:bg-accent transition-colors"
+                        >
+                          <div className="flex items-start gap-2">
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              {isExpanded && (
+                                <div className="font-medium mb-2">{feedback.questionText}</div>
+                              )}
+                              <div className={`text-muted-foreground ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                                {feedback.content}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </aside>
             )}
 

@@ -21,6 +21,8 @@ export default function DashboardPage() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [profileViewMetrics, setProfileViewMetrics] = useState<Array<Schema["ProfileDailyViewMetric"]["type"]>>([]);
+  const [feedbackViewMetrics, setFeedbackViewMetrics] = useState<Array<Schema["FeedbackTotalViewMetric"]["type"]>>([]);
 
   useEffect(() => {
     getCurrentUser().then(currentUser => setUser(currentUser)).catch(() => {});
@@ -55,11 +57,8 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       try {
-        const [resumeRes, receivedRes] = await Promise.all([
-          profile.resume(),
-          profile.receivedFeedback(),
-        ]);
-
+        // Load resume
+        const resumeRes = await profile.resume();
         const resumeData = resumeRes.data;
         setResume(resumeData);
 
@@ -73,18 +72,44 @@ export default function DashboardPage() {
           const published = allVersions.find(v => v.isPublished);
           setPublishedVersion(published || null);
         }
+      } catch (error) {
+        console.error("Error fetching resume:", error);
+      }
 
+      try {
+        // Load feedback
+        const receivedRes = await profile.receivedFeedback();
         console.log("Received feedback response:", receivedRes);
         console.log("Received feedback data:", receivedRes.data);
         console.log("Profile ID:", profile.id);
         setReceivedFeedback(receivedRes.data);
       } catch (error) {
-        console.error("Error fetching profile data:", error);
+        console.error("Error fetching feedback:", error);
+      }
+
+      try {
+        // Load profile view metrics
+        const profileViewsRes = await client.models.ProfileDailyViewMetric.list({
+          filter: { profileId: { eq: profile.id } }
+        });
+        setProfileViewMetrics(profileViewsRes.data);
+      } catch (error) {
+        console.error("Error fetching profile view metrics:", error);
+      }
+
+      try {
+        // Load feedback view metrics
+        const feedbackViewsRes = await client.models.FeedbackTotalViewMetric.list({
+          filter: { profileId: { eq: profile.id } }
+        });
+        setFeedbackViewMetrics(feedbackViewsRes.data);
+      } catch (error) {
+        console.error("Error fetching feedback view metrics:", error);
       }
     };
 
     fetchData();
-  }, [profile]);
+  }, [profile, client]);
 
   const handleProfileSetupComplete = () => {
     if (user?.userId) {
@@ -142,27 +167,39 @@ export default function DashboardPage() {
     },
   } satisfies ChartConfig;
 
-  // Mock data for resume views - replace with actual data from analytics
-  const resumeViewsData = [
-    { date: "Mon", views: 12 },
-    { date: "Tue", views: 19 },
-    { date: "Wed", views: 15 },
-    { date: "Thu", views: 25 },
-    { date: "Fri", views: 22 },
-    { date: "Sat", views: 18 },
-    { date: "Sun", views: 14 },
-  ];
+  // Process profile view metrics for the last 7 days
+  const resumeViewsData = (() => {
+    const last7Days = [];
+    const today = new Date();
 
-  // Process feedback data to show clicks by profile
-  const feedbackClicksData = receivedFeedback.reduce((acc: any[], feedback) => {
-    const existingProfile = acc.find(item => item.profile === feedback.fromProfileId);
-    if (existingProfile) {
-      existingProfile.clicks += 1;
-    } else {
-      acc.push({ profile: feedback.fromProfileId?.substring(0, 8) || "Unknown", clicks: 1 });
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+      const metric = profileViewMetrics.find(m => m.date === dateStr);
+      last7Days.push({
+        date: dayName,
+        views: metric?.viewCount || 0
+      });
     }
-    return acc;
-  }, []);
+
+    return last7Days;
+  })();
+
+  // Process feedback view metrics to show clicks by feedback
+  const feedbackClicksData = feedbackViewMetrics
+    .filter(metric => metric.feedbackId)
+    .map(metric => {
+      const feedback = receivedFeedback.find(f => f.id === metric.feedbackId);
+      return {
+        profile: feedback?.fromProfileId?.substring(0, 8) || metric.feedbackId?.substring(0, 8) || "Unknown",
+        clicks: metric.viewCount
+      };
+    })
+    .sort((a, b) => b.clicks - a.clicks)
+    .slice(0, 10); // Show top 10
 
   return (
     <div className="container mx-auto p-8">
