@@ -20,6 +20,15 @@ const schema = a.schema({
       resumeId: a.id(),
       resume: a.hasOne('Resume', 'profileId')
         .authorization((allow) => allow.owner()),
+      // Subscription fields
+      stripeCustomerId: a.string(),
+      subscriptionTier: a.enum(['FREE', 'BASIC', 'PREMIUM']),
+      subscriptionStatus: a.enum(['ACTIVE', 'CANCELLED', 'PAST_DUE', 'NONE']),
+      subscriptionExpiresAt: a.datetime(),
+      // Ideas created by this profile
+      ideas: a.hasMany('Idea', 'ownerProfileId'),
+      // Ideas joined by this profile
+      joinedIdeas: a.hasMany('IdeaMember', 'profileId'),
     })
     .identifier(['id'])
     .secondaryIndexes((index) => [
@@ -29,6 +38,55 @@ const schema = a.schema({
       allow.owner(),
       allow.authenticated().to(['get']),
       allow.guest().to(['read'])
+    ]),
+  // Ideas/Projects for local teams platform
+  Idea: a
+    .model({
+      id: a.id(),
+      title: a.string().required(),
+      description: a.string().required(),
+      shortDescription: a.string(), // 100-150 char preview
+      skillsNeeded: a.string().array(), // Array of skills
+      maxParticipants: a.integer().required(),
+      currentParticipants: a.integer().default(0),
+      status: a.enum(['DRAFT', 'ACTIVE', 'FULL', 'COMPLETED', 'ARCHIVED']),
+      isFeatured: a.boolean().default(false),
+      impactArea: a.string(), // e.g., "Environment", "Education", "Health"
+      location: a.string(), // City or region
+      ownerProfileId: a.id().required(),
+      ownerProfile: a.belongsTo('Profile', 'ownerProfileId'),
+      members: a.hasMany('IdeaMember', 'ideaId'),
+    })
+    .identifier(['id'])
+    .secondaryIndexes((index) => [
+      index('status'),
+      index('ownerProfileId')
+    ])
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read']),
+      allow.guest().to(['read'])
+    ]),
+  // Junction table for idea members
+  IdeaMember: a
+    .model({
+      id: a.id(),
+      ideaId: a.id().required(),
+      idea: a.belongsTo('Idea', 'ideaId'),
+      profileId: a.id().required(),
+      profile: a.belongsTo('Profile', 'profileId'),
+      role: a.enum(['OWNER', 'MEMBER']),
+      joinedAt: a.datetime(),
+      status: a.enum(['PENDING', 'APPROVED', 'REJECTED']),
+    })
+    .identifier(['id'])
+    .secondaryIndexes((index) => [
+      index('ideaId'),
+      index('profileId')
+    ])
+    .authorization((allow) => [
+      allow.owner(),
+      allow.authenticated().to(['read', 'create']),
     ]),
   Resume: a
     .model({
