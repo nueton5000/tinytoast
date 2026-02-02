@@ -34,7 +34,10 @@ import {
   Send,
   Menu,
   X,
-  Home
+  Home,
+  Users,
+  Lightbulb,
+  LayoutGrid
 } from "lucide-react";
 
 interface AppLayoutProps {
@@ -217,6 +220,31 @@ function AppLayoutInner({ children, user, onSignOut }: AppLayoutProps) {
                   <SidebarItem active={pathname.startsWith("/feedback/given")}>
                     <Send className="h-4 w-4" />
                     <span>View All</span>
+                  </SidebarItem>
+                </Link>
+              </SidebarSection>
+
+              <Separator className="my-2" />
+
+              {/* Local Teams */}
+              <SidebarSection>
+                <SidebarSectionTitle>Local Teams</SidebarSectionTitle>
+                <Link href="/teams">
+                  <SidebarItem active={pathname === "/teams"}>
+                    <Users className="h-4 w-4" />
+                    <span>Overview</span>
+                  </SidebarItem>
+                </Link>
+                <Link href="/teams/board">
+                  <SidebarItem active={pathname === "/teams/board"}>
+                    <LayoutGrid className="h-4 w-4" />
+                    <span>Project Board</span>
+                  </SidebarItem>
+                </Link>
+                <Link href="/teams/post">
+                  <SidebarItem active={pathname === "/teams/post"}>
+                    <Lightbulb className="h-4 w-4" />
+                    <span>Post an Idea</span>
                   </SidebarItem>
                 </Link>
               </SidebarSection>
