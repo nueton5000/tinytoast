@@ -7,7 +7,7 @@ import { util } from '@aws-appsync/utils';
  */
 export function request(ctx) {
   const { profileId } = ctx.args;
-  const today = new Date().toISOString().split('T')[0];
+  const today = util.time.nowISO8601().split('T')[0];
 
   return {
     operation: 'UpdateItem',
